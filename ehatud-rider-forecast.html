@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ehatud Rider Demand Forecast</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #F5F5F5; font-family: 'Segoe UI', system-ui, sans-serif; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+
+const BRANCH_CONFIG = {
+  Hinunangan: { baseDaily: 22, riderCapacity: 8 },
+  Sogod:       { baseDaily: 38, riderCapacity: 10 },
+};
+
+const DOW_MULTIPLIERS = { 0:1.14, 1:0.99, 2:0.97, 3:1.02, 4:1.02, 5:1.05, 6:1.02 };
+const DOW_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+const MONTH_MULTIPLIERS = {
+  1:0.97, 2:1.00, 3:0.90, 4:1.05, 5:1.27,
+  6:0.99, 7:0.89, 8:0.97, 9:1.00, 10:1.06, 11:1.03, 12:1.23
+};
+const MONTH_NAMES = ["","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+function detectEvents(date) {
+  const m = date.getMonth() + 1, d = date.getDate();
+  const events = [];
+  if (m===2 && d===14)           events.push({ label:"Valentine's Day",       boost:1.44, icon:"💝" });
+  if (m===5 && d>=8 && d<=14)    events.push({ label:"Mother's Day Week",      boost:1.90, icon:"🌸" });
+  if (m===12 && d>=15 && d<=21)  events.push({ label:"Christmas Peak Week",    boost:1.37, icon:"🎄" });
+  if (m===12 && d>=22 && d<=26)  events.push({ label:"Christmas Season",       boost:1.20, icon:"🎁" });
+  if (m===1 && d>=1 && d<=7)     events.push({ label:"Post-New Year Surge",    boost:1.41, icon:"🎆" });
+  if (d===15)                    events.push({ label:"Payday (Mid-month)",      boost:0.96, icon:"💸" });
+  if (d>=28)                     events.push({ label:"Payday (End-month)",      boost:1.05, icon:"💸" });
+  return events;
+}
+
+function getGrowthMultiplier(date) {
+  const launch = new Date("2026-07-25");
+  if (date < launch) return 1.0;
+  const days = Math.floor((date - launch) / 86400000);
+  if (days < 30)  return 1.5;
+  if (days < 90)  return 1.8;
+  return 2.14;
+}
+
+function getDemandLevel(mult) {
+  if (mult >= 1.5)  return { label:"CRITICAL SURGE", color:"#7B0000", bg:"#FFE5E5" };
+  if (mult >= 1.25) return { label:"HIGH DEMAND",    color:"#E02020", bg:"#FFF0F0" };
+  if (mult >= 1.10) return { label:"ELEVATED",       color:"#C17000", bg:"#FFF8E5" };
+  if (mult >= 0.95) return { label:"NORMAL",         color:"#1A7A1A", bg:"#F0FFF0" };
+  return               { label:"SLOW DAY",        color:"#555555", bg:"#F5F5F5" };
+}
+
+function App() {
+  const fmt = d => d.toISOString().split("T")[0];
+  const [selectedDate, setSelectedDate] = React.useState(fmt(new Date()));
+  const [branch, setBranch] = React.useState("Hinunangan");
+  const [showDetails, setShowDetails] = React.useState(false);
+
+  const date = new Date(selectedDate + "T12:00:00");
+  const dow   = date.getDay();
+  const month = date.getMonth() + 1;
+  const cfg   = BRANCH_CONFIG[branch];
+
+  const dowMult    = DOW_MULTIPLIERS[dow];
+  const monthMult  = MONTH_MULTIPLIERS[month];
+  const events     = detectEvents(date);
+  const eventBoost = events.length > 0 ? Math.max(...events.map(e => e.boost)) : 1.0;
+  const growthMult = getGrowthMultiplier(date);
+  const totalMult  = dowMult * monthMult * eventBoost * growthMult;
+  const predictedTx = Math.round(cfg.baseDaily * totalMult);
+  const ridersNeeded = Math.max(2, Math.ceil(predictedTx / cfg.riderCapacity));
+  const demand = getDemandLevel(totalMult);
+  const isPostLaunch = date >= new Date("2026-07-25");
+
+  const nextDays = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(date); d.setDate(d.getDate() + i);
+    const dm = DOW_MULTIPLIERS[d.getDay()];
+    const mm = MONTH_MULTIPLIERS[d.getMonth() + 1];
+    const ev = detectEvents(d);
+    const eb = ev.length > 0 ? Math.max(...ev.map(e => e.boost)) : 1.0;
+    const gm = getGrowthMultiplier(d);
+    const mult = dm * mm * eb * gm;
+    const tx = Math.round(cfg.baseDaily * mult);
+    return { date: d, tx, riders: Math.max(2, Math.ceil(tx / cfg.riderCapacity)), events: ev, mult };
+  });
+  const maxTx = Math.max(...nextDays.map(d => d.tx));
+
+  return (
+    <div style={{ fontFamily:"'Segoe UI',system-ui,sans-serif", background:"#F5F5F5", minHeight:"100vh", color:"#1A1A1A" }}>
+
+      {/* Header */}
+      <div style={{ background:"#E02020", padding:"20px 24px 16px", color:"#fff" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
+          <div style={{ width:32, height:32, background:"#fff", borderRadius:"50% 50% 50% 0", transform:"rotate(-45deg)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+            <span style={{ transform:"rotate(45deg)", fontSize:14, color:"#E02020", fontWeight:700 }}>e</span>
+          </div>
+          <div>
+            <div style={{ fontWeight:700, fontSize:18 }}>ehatud</div>
+            <div style={{ fontSize:9, letterSpacing:"2px", opacity:0.8 }}>HAPPINESS DELIVERED</div>
+          </div>
+        </div>
+        <div style={{ fontSize:13, opacity:0.9, marginTop:8 }}>Rider Demand Forecast Tool</div>
+        <div style={{ fontSize:11, opacity:0.7, marginTop:2 }}>Powered by 889 days of ehatud operational data · Jan 2024 – Jun 2026</div>
+      </div>
+
+      {/* Controls */}
+      <div style={{ padding:"20px 24px 0" }}>
+        <div style={{ display:"flex", gap:12, flexWrap:"wrap" }}>
+          <div style={{ flex:1, minWidth:160 }}>
+            <label style={{ fontSize:11, fontWeight:600, color:"#666", letterSpacing:"0.5px", display:"block", marginBottom:6 }}>SELECT DATE</label>
+            <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
+              style={{ width:"100%", padding:"10px 12px", border:"1.5px solid #E02020", borderRadius:8, fontSize:14, fontFamily:"inherit", background:"#fff", color:"#1A1A1A", outline:"none" }} />
+          </div>
+          <div style={{ flex:1, minWidth:160 }}>
+            <label style={{ fontSize:11, fontWeight:600, color:"#666", letterSpacing:"0.5px", display:"block", marginBottom:6 }}>BRANCH</label>
+            <select value={branch} onChange={e => setBranch(e.target.value)}
+              style={{ width:"100%", padding:"10px 12px", border:"1.5px solid #E02020", borderRadius:8, fontSize:14, fontFamily:"inherit", background:"#fff", color:"#1A1A1A", outline:"none" }}>
+              <option>Hinunangan</option>
+              <option>Sogod</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Card */}
+      <div style={{ padding:"16px 24px" }}>
+        <div style={{ background:"#fff", borderRadius:12, border:`2px solid ${demand.color}`, overflow:"hidden" }}>
+          <div style={{ background:demand.bg, borderBottom:`1px solid ${demand.color}20`, padding:"10px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <span style={{ fontSize:11, fontWeight:700, color:demand.color, letterSpacing:"1px" }}>{demand.label}</span>
+            <span style={{ fontSize:11, color:"#888" }}>{DOW_NAMES[dow]}, {date.toLocaleDateString("en-PH",{ month:"long", day:"numeric", year:"numeric" })}</span>
+          </div>
+
+          <div style={{ padding:"20px 16px" }}>
+            <div style={{ display:"flex", gap:0, marginBottom:16 }}>
+              <div style={{ flex:1, textAlign:"center", borderRight:"1px solid #F5F5F5", paddingRight:12 }}>
+                <div style={{ fontSize:48, fontWeight:700, color:"#E02020", lineHeight:1 }}>{predictedTx}</div>
+                <div style={{ fontSize:11, color:"#888", marginTop:4, letterSpacing:"0.5px" }}>ESTIMATED ORDERS</div>
+              </div>
+              <div style={{ flex:1, textAlign:"center", paddingLeft:12 }}>
+                <div style={{ fontSize:48, fontWeight:700, color:"#1A1A1A", lineHeight:1 }}>{ridersNeeded}</div>
+                <div style={{ fontSize:11, color:"#888", marginTop:4, letterSpacing:"0.5px" }}>RIDERS RECOMMENDED</div>
+              </div>
+            </div>
+
+            {events.length > 0 && (
+              <div style={{ marginBottom:14 }}>
+                {events.map((ev,i) => (
+                  <div key={i} style={{ display:"inline-flex", alignItems:"center", gap:6, background:"#FFF0F0", border:"1px solid #E0202030", borderRadius:20, padding:"4px 10px", fontSize:12, color:"#E02020", fontWeight:600, marginRight:6, marginBottom:4 }}>
+                    <span>{ev.icon}</span><span>{ev.label}</span>
+                    <span style={{ opacity:0.7 }}>+{Math.round((ev.boost-1)*100)}% orders</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {isPostLaunch && (
+              <div style={{ background:"#E020200D", border:"1px solid #E0202030", borderRadius:8, padding:"8px 12px", fontSize:12, color:"#E02020", marginBottom:14 }}>
+                🚀 <strong>Post-app launch projection</strong> — includes +114% volume growth estimate from July 25, 2026 baseline
+              </div>
+            )}
+
+            <button onClick={() => setShowDetails(!showDetails)}
+              style={{ background:"none", border:"1px solid #E5E5E5", borderRadius:6, padding:"6px 12px", fontSize:12, color:"#888", cursor:"pointer", fontFamily:"inherit" }}>
+              {showDetails ? "▲ Hide" : "▼ Show"} forecast breakdown
+            </button>
+
+            {showDetails && (
+              <div style={{ marginTop:12, background:"#F5F5F5", borderRadius:8, padding:12 }}>
+                <div style={{ fontSize:11, fontWeight:700, color:"#666", marginBottom:8, letterSpacing:"0.5px" }}>HOW THIS WAS CALCULATED</div>
+                {[
+                  { label:"Base daily orders", val: String(cfg.baseDaily) },
+                  { label:`${DOW_NAMES[dow]} pattern`, val:`×${dowMult.toFixed(2)}` },
+                  { label:`${MONTH_NAMES[month]} seasonal factor`, val:`×${monthMult.toFixed(2)}` },
+                  ...(events.length>0 ? [{ label:events[0].label, val:`×${eventBoost.toFixed(2)}` }] : []),
+                  ...(isPostLaunch ? [{ label:"App launch growth", val:`×${growthMult.toFixed(2)}` }] : []),
+                ].map((row,i) => (
+                  <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:12, padding:"3px 0", borderBottom:"1px solid #E5E5E5" }}>
+                    <span style={{ color:"#555" }}>{row.label}</span>
+                    <span style={{ fontWeight:600 }}>{row.val}</span>
+                  </div>
+                ))}
+                <div style={{ display:"flex", justifyContent:"space-between", fontSize:13, fontWeight:700, marginTop:6, color:"#E02020" }}>
+                  <span>Predicted orders</span><span>{predictedTx}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 7-Day Chart */}
+      <div style={{ padding:"0 24px 16px" }}>
+        <div style={{ background:"#fff", borderRadius:12, border:"1px solid #E5E5E5", padding:16 }}>
+          <div style={{ fontSize:12, fontWeight:700, color:"#E02020", letterSpacing:"0.5px", marginBottom:14 }}>
+            7-DAY OUTLOOK — {branch.toUpperCase()}
+          </div>
+          <div style={{ display:"flex", gap:6, alignItems:"flex-end", height:140 }}>
+            {nextDays.map((day, i) => {
+              const pct = day.tx / (maxTx * 1.1);
+              const isToday = i === 0;
+              const barColor = day.mult >= 1.25 ? "#E02020" : day.mult >= 1.1 ? "#C17000" : "#1A1A1A";
+              return (
+                <div key={i} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:3 }}>
+                  <div style={{ fontSize:10, height:16, display:"flex", alignItems:"center" }}>{day.events.length>0 ? day.events[0].icon : ""}</div>
+                  <div style={{ fontSize:10, fontWeight:700, color:barColor }}>{day.tx}</div>
+                  <div style={{ width:"100%", height:Math.max(4, Math.round(pct*80)), background:isToday?"#E02020":barColor+"60", borderRadius:"3px 3px 0 0", border:isToday?"none":`1px solid ${barColor}30` }} />
+                  <div style={{ fontSize:9, color:"#888", background:"#F5F5F5", borderRadius:4, padding:"1px 4px", fontWeight:600 }}>{day.riders}r</div>
+                  <div style={{ fontSize:9, color:isToday?"#E02020":"#999", fontWeight:isToday?700:400 }}>{DOW_NAMES[day.date.getDay()].slice(0,3).toUpperCase()}</div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ fontSize:10, color:"#bbb", marginTop:8 }}>Bar height = estimated orders · Number below = recommended riders (r)</div>
+        </div>
+      </div>
+
+      {/* Seasonal Calendar */}
+      <div style={{ padding:"0 24px 16px" }}>
+        <div style={{ background:"#fff", borderRadius:12, border:"1px solid #E5E5E5", padding:16 }}>
+          <div style={{ fontSize:12, fontWeight:700, color:"#E02020", letterSpacing:"0.5px", marginBottom:12 }}>SEASONAL DEMAND CALENDAR</div>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+            {Object.entries(MONTH_MULTIPLIERS).map(([m, mult]) => {
+              const level = getDemandLevel(mult);
+              const isCurrentMonth = parseInt(m) === month;
+              return (
+                <div key={m} style={{ background:isCurrentMonth?"#E02020":level.bg, border:`1px solid ${isCurrentMonth?"#E02020":level.color+"30"}`, borderRadius:6, padding:"6px 8px", minWidth:48, textAlign:"center" }}>
+                  <div style={{ fontSize:11, fontWeight:700, color:isCurrentMonth?"#fff":level.color }}>{MONTH_NAMES[m]}</div>
+                  <div style={{ fontSize:9, color:isCurrentMonth?"#fff":"#888", marginTop:1 }}>×{mult.toFixed(2)}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div style={{ textAlign:"center", padding:"12px 24px 24px", fontSize:10, color:"#bbb", letterSpacing:"1.5px" }}>
+        EHATUD · HAPPINESS DELIVERED<br/>
+        <span style={{ fontSize:9 }}>Model based on Hinunangan + Sogod daily data · Not a substitute for dispatcher judgment</span>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
