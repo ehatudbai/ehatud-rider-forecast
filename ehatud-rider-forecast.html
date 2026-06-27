@@ -2,19 +2,35 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <title>ehatud Rider Demand Forecast</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #F5F5F5; font-family: 'Segoe UI', system-ui, sans-serif; }
+    html { font-size: 16px; }
+    body {
+      background: #F5F5F5;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      -webkit-text-size-adjust: 100%;
+    }
+    input, select, button { font-size: 16px !important; } /* prevent iOS zoom */
+
+    /* Responsive breakpoints */
+    .container { width: 100%; max-width: 680px; margin: 0 auto; }
+
+    @media (max-width: 480px) {
+      .big-number { font-size: 40px !important; }
+      .control-row { flex-direction: column !important; }
+      .month-grid { gap: 4px !important; }
+      .month-cell { min-width: 40px !important; padding: 5px 4px !important; }
+    }
   </style>
 </head>
 <body>
-  <div id="root"></div>
-  <script type="text/babel">
+<div id="root"></div>
+<script type="text/babel">
 
 const BRANCH_CONFIG = {
   Hinunangan: { baseDaily: 22, riderCapacity: 8 },
@@ -23,6 +39,7 @@ const BRANCH_CONFIG = {
 
 const DOW_MULTIPLIERS = { 0:1.14, 1:0.99, 2:0.97, 3:1.02, 4:1.02, 5:1.05, 6:1.02 };
 const DOW_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const DOW_SHORT = ["SUN","MON","TUE","WED","THU","FRI","SAT"];
 
 const MONTH_MULTIPLIERS = {
   1:0.97, 2:1.00, 3:0.90, 4:1.05, 5:1.27,
@@ -32,227 +49,327 @@ const MONTH_NAMES = ["","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","O
 
 function detectEvents(date) {
   const m = date.getMonth() + 1, d = date.getDate();
-  const events = [];
-  if (m===2 && d===14)           events.push({ label:"Valentine's Day",       boost:1.44, icon:"💝" });
-  if (m===5 && d>=8 && d<=14)    events.push({ label:"Mother's Day Week",      boost:1.90, icon:"🌸" });
-  if (m===12 && d>=15 && d<=21)  events.push({ label:"Christmas Peak Week",    boost:1.37, icon:"🎄" });
-  if (m===12 && d>=22 && d<=26)  events.push({ label:"Christmas Season",       boost:1.20, icon:"🎁" });
-  if (m===1 && d>=1 && d<=7)     events.push({ label:"Post-New Year Surge",    boost:1.41, icon:"🎆" });
-  if (d===15)                    events.push({ label:"Payday (Mid-month)",      boost:0.96, icon:"💸" });
-  if (d>=28)                     events.push({ label:"Payday (End-month)",      boost:1.05, icon:"💸" });
-  return events;
+  const ev = [];
+  if (m===2 && d===14)          ev.push({ label:"Valentine's Day",     boost:1.44, icon:"💝" });
+  if (m===5 && d>=8 && d<=14)   ev.push({ label:"Mother's Day Week",   boost:1.90, icon:"🌸" });
+  if (m===12 && d>=15 && d<=21) ev.push({ label:"Christmas Peak Week", boost:1.37, icon:"🎄" });
+  if (m===12 && d>=22 && d<=26) ev.push({ label:"Christmas Season",    boost:1.20, icon:"🎁" });
+  if (m===1 && d>=1 && d<=7)    ev.push({ label:"Post-New Year Surge", boost:1.41, icon:"🎆" });
+  if (d===15)                   ev.push({ label:"Mid-month Payday",    boost:0.96, icon:"💸" });
+  if (d>=28)                    ev.push({ label:"End-month Payday",    boost:1.05, icon:"💸" });
+  return ev;
 }
 
-function getGrowthMultiplier(date) {
+function getGrowthMult(date) {
   const launch = new Date("2026-07-25");
   if (date < launch) return 1.0;
   const days = Math.floor((date - launch) / 86400000);
-  if (days < 30)  return 1.5;
-  if (days < 90)  return 1.8;
+  if (days < 30) return 1.5;
+  if (days < 90) return 1.8;
   return 2.14;
 }
 
-function getDemandLevel(mult) {
-  if (mult >= 1.5)  return { label:"CRITICAL SURGE", color:"#7B0000", bg:"#FFE5E5" };
-  if (mult >= 1.25) return { label:"HIGH DEMAND",    color:"#E02020", bg:"#FFF0F0" };
-  if (mult >= 1.10) return { label:"ELEVATED",       color:"#C17000", bg:"#FFF8E5" };
-  if (mult >= 0.95) return { label:"NORMAL",         color:"#1A7A1A", bg:"#F0FFF0" };
-  return               { label:"SLOW DAY",        color:"#555555", bg:"#F5F5F5" };
+function getDemand(mult) {
+  if (mult >= 1.5)  return { label:"CRITICAL SURGE", color:"#7B0000", bg:"#FFE5E5", border:"#7B0000" };
+  if (mult >= 1.25) return { label:"HIGH DEMAND",    color:"#E02020", bg:"#FFF0F0", border:"#E02020" };
+  if (mult >= 1.10) return { label:"ELEVATED",       color:"#B06000", bg:"#FFF8E5", border:"#C17000" };
+  if (mult >= 0.95) return { label:"NORMAL",         color:"#1A7A1A", bg:"#F0FFF0", border:"#1A7A1A" };
+  return               { label:"SLOW DAY",        color:"#555",    bg:"#F5F5F5", border:"#999" };
 }
 
 function App() {
   const fmt = d => d.toISOString().split("T")[0];
-  const [selectedDate, setSelectedDate] = React.useState(fmt(new Date()));
+  const [date, setDate] = React.useState(fmt(new Date()));
   const [branch, setBranch] = React.useState("Hinunangan");
-  const [showDetails, setShowDetails] = React.useState(false);
+  const [open, setOpen] = React.useState(false);
 
-  const date = new Date(selectedDate + "T12:00:00");
-  const dow   = date.getDay();
-  const month = date.getMonth() + 1;
-  const cfg   = BRANCH_CONFIG[branch];
+  const d    = new Date(date + "T12:00:00");
+  const dow  = d.getDay();
+  const mon  = d.getMonth() + 1;
+  const cfg  = BRANCH_CONFIG[branch];
 
-  const dowMult    = DOW_MULTIPLIERS[dow];
-  const monthMult  = MONTH_MULTIPLIERS[month];
-  const events     = detectEvents(date);
-  const eventBoost = events.length > 0 ? Math.max(...events.map(e => e.boost)) : 1.0;
-  const growthMult = getGrowthMultiplier(date);
-  const totalMult  = dowMult * monthMult * eventBoost * growthMult;
-  const predictedTx = Math.round(cfg.baseDaily * totalMult);
-  const ridersNeeded = Math.max(2, Math.ceil(predictedTx / cfg.riderCapacity));
-  const demand = getDemandLevel(totalMult);
-  const isPostLaunch = date >= new Date("2026-07-25");
+  const dm   = DOW_MULTIPLIERS[dow];
+  const mm   = MONTH_MULTIPLIERS[mon];
+  const evs  = detectEvents(d);
+  const eb   = evs.length ? Math.max(...evs.map(e=>e.boost)) : 1.0;
+  const gm   = getGrowthMult(d);
+  const tot  = dm * mm * eb * gm;
+  const tx   = Math.round(cfg.baseDaily * tot);
+  const rid  = Math.max(2, Math.ceil(tx / cfg.riderCapacity));
+  const dem  = getDemand(tot);
+  const post = d >= new Date("2026-07-25");
 
-  const nextDays = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(date); d.setDate(d.getDate() + i);
-    const dm = DOW_MULTIPLIERS[d.getDay()];
-    const mm = MONTH_MULTIPLIERS[d.getMonth() + 1];
-    const ev = detectEvents(d);
-    const eb = ev.length > 0 ? Math.max(...ev.map(e => e.boost)) : 1.0;
-    const gm = getGrowthMultiplier(d);
-    const mult = dm * mm * eb * gm;
-    const tx = Math.round(cfg.baseDaily * mult);
-    return { date: d, tx, riders: Math.max(2, Math.ceil(tx / cfg.riderCapacity)), events: ev, mult };
+  const week = Array.from({length:7}, (_,i) => {
+    const wd = new Date(d); wd.setDate(wd.getDate()+i);
+    const wdm = DOW_MULTIPLIERS[wd.getDay()];
+    const wmm = MONTH_MULTIPLIERS[wd.getMonth()+1];
+    const wev = detectEvents(wd);
+    const web = wev.length ? Math.max(...wev.map(e=>e.boost)) : 1.0;
+    const wgm = getGrowthMult(wd);
+    const wt  = wdm * wmm * web * wgm;
+    const wtx = Math.round(cfg.baseDaily * wt);
+    return { d:wd, tx:wtx, r:Math.max(2,Math.ceil(wtx/cfg.riderCapacity)), ev:wev, mult:wt };
   });
-  const maxTx = Math.max(...nextDays.map(d => d.tx));
+  const maxTx = Math.max(...week.map(w=>w.tx));
+
+  const s = {
+    wrap: { fontFamily:"'Segoe UI',system-ui,sans-serif", background:"#F5F5F5", minHeight:"100vh", color:"#1A1A1A" },
+    inner: { width:"100%", maxWidth:680, margin:"0 auto" },
+
+    // Header
+    hdr: { background:"#E02020", padding:"20px 20px 18px" },
+    hdrTop: { display:"flex", alignItems:"center", gap:10, marginBottom:6 },
+    pin: { width:36, height:36, background:"#fff", borderRadius:"50% 50% 50% 0", transform:"rotate(-45deg)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 },
+    pinTxt: { transform:"rotate(45deg)", fontSize:16, color:"#E02020", fontWeight:700 },
+    hdrName: { fontWeight:700, fontSize:22, color:"#fff", lineHeight:1.1 },
+    hdrTag: { fontSize:10, letterSpacing:"2.5px", color:"rgba(255,255,255,0.75)", marginTop:2 },
+    hdrSub: { fontSize:14, color:"rgba(255,255,255,0.9)", marginTop:4 },
+    hdrPow: { fontSize:11, color:"rgba(255,255,255,0.65)", marginTop:2 },
+
+    // Controls
+    ctrlWrap: { padding:"16px 20px 0" },
+    ctrlRow: { display:"flex", gap:12, flexWrap:"wrap" },
+    ctrlBox: { flex:1, minWidth:140 },
+    ctrlLabel: { fontSize:11, fontWeight:700, color:"#666", letterSpacing:"1px", display:"block", marginBottom:6 },
+    ctrlInput: { width:"100%", padding:"12px 14px", border:"2px solid #E02020", borderRadius:10, fontSize:16, fontFamily:"inherit", background:"#fff", color:"#1A1A1A", outline:"none" },
+
+    // Main card
+    cardWrap: { padding:"16px 20px" },
+    card: { background:"#fff", borderRadius:14, overflow:"hidden" },
+    cardTop: { padding:"12px 18px", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:4 },
+    badge: { fontSize:12, fontWeight:800, letterSpacing:"1px" },
+    dateStr: { fontSize:12, color:"#888" },
+
+    // Numbers
+    numRow: { display:"flex", padding:"22px 18px 16px" },
+    numBox: { flex:1, textAlign:"center" },
+    numDivider: { width:1, background:"#F0F0F0", margin:"0 4px" },
+    bigNum: { fontSize:56, fontWeight:800, lineHeight:1 },
+    numLbl: { fontSize:11, color:"#888", marginTop:5, letterSpacing:"0.8px", fontWeight:600 },
+
+    // Event tags
+    tagWrap: { padding:"0 18px 14px", display:"flex", flexWrap:"wrap", gap:6 },
+    tag: { display:"inline-flex", alignItems:"center", gap:5, background:"#FFF0F0", border:"1px solid #E0202035", borderRadius:20, padding:"5px 12px", fontSize:13, color:"#E02020", fontWeight:600 },
+
+    // Post launch
+    postLaunch: { margin:"0 18px 14px", background:"#FFF0F0", border:"1px solid #E0202035", borderRadius:10, padding:"10px 14px", fontSize:13, color:"#C01010" },
+
+    // Details toggle
+    toggleBtn: { margin:"0 18px 18px", background:"none", border:"1px solid #E0E0E0", borderRadius:8, padding:"8px 14px", fontSize:13, color:"#888", cursor:"pointer", fontFamily:"inherit" },
+    detailBox: { margin:"0 18px 18px", background:"#F8F8F8", borderRadius:10, padding:14 },
+    detailHdr: { fontSize:11, fontWeight:700, color:"#888", letterSpacing:"1px", marginBottom:10 },
+    detailRow: { display:"flex", justifyContent:"space-between", fontSize:13, padding:"4px 0", borderBottom:"1px solid #EEEEEE" },
+    detailTotal: { display:"flex", justifyContent:"space-between", fontSize:15, fontWeight:700, marginTop:8, color:"#E02020" },
+
+    // 7-day
+    weekWrap: { padding:"0 20px 16px" },
+    weekCard: { background:"#fff", borderRadius:14, border:"1px solid #EBEBEB", padding:"18px 16px 14px" },
+    weekHdr: { fontSize:13, fontWeight:700, color:"#E02020", letterSpacing:"0.5px", marginBottom:14 },
+    weekBars: { display:"flex", gap:4, alignItems:"flex-end", height:130 },
+    weekBarCol: { flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:3 },
+    weekIcon: { fontSize:12, height:18, display:"flex", alignItems:"center", justifyContent:"center" },
+    weekTx: { fontSize:11, fontWeight:700 },
+    weekRider: { fontSize:10, color:"#888", background:"#F5F5F5", borderRadius:4, padding:"2px 5px", fontWeight:600 },
+    weekDay: { fontSize:10, fontWeight:600 },
+    weekNote: { fontSize:11, color:"#C0C0C0", marginTop:10 },
+
+    // Seasonal
+    seasonWrap: { padding:"0 20px 20px" },
+    seasonCard: { background:"#fff", borderRadius:14, border:"1px solid #EBEBEB", padding:"18px 16px" },
+    seasonHdr: { fontSize:13, fontWeight:700, color:"#E02020", letterSpacing:"0.5px", marginBottom:12 },
+    monthGrid: { display:"flex", flexWrap:"wrap", gap:6 },
+    monthCell: { borderRadius:8, padding:"7px 8px", minWidth:46, textAlign:"center" },
+    monthName: { fontSize:12, fontWeight:700 },
+    monthMult: { fontSize:10, marginTop:2 },
+
+    // Legend
+    legendRow: { display:"flex", flexWrap:"wrap", gap:8, marginTop:12 },
+    legendDot: { width:10, height:10, borderRadius:3, flexShrink:0 },
+    legendTxt: { fontSize:11, color:"#999" },
+
+    // Footer
+    footer: { textAlign:"center", padding:"14px 20px 28px", fontSize:11, color:"#C0C0C0", letterSpacing:"1.5px", lineHeight:1.8 },
+  };
+
+  const legends = [
+    { label:"Critical Surge", color:"#7B0000", bg:"#FFE5E5" },
+    { label:"High Demand",    color:"#E02020", bg:"#FFF0F0" },
+    { label:"Elevated",       color:"#B06000", bg:"#FFF8E5" },
+    { label:"Normal",         color:"#1A7A1A", bg:"#F0FFF0" },
+    { label:"Slow Day",       color:"#555",    bg:"#F5F5F5" },
+  ];
 
   return (
-    <div style={{ fontFamily:"'Segoe UI',system-ui,sans-serif", background:"#F5F5F5", minHeight:"100vh", color:"#1A1A1A" }}>
+    <div style={s.wrap}>
+      <div style={s.inner}>
 
-      {/* Header */}
-      <div style={{ background:"#E02020", padding:"20px 24px 16px", color:"#fff" }}>
-        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
-          <div style={{ width:32, height:32, background:"#fff", borderRadius:"50% 50% 50% 0", transform:"rotate(-45deg)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-            <span style={{ transform:"rotate(45deg)", fontSize:14, color:"#E02020", fontWeight:700 }}>e</span>
-          </div>
-          <div>
-            <div style={{ fontWeight:700, fontSize:18 }}>ehatud</div>
-            <div style={{ fontSize:9, letterSpacing:"2px", opacity:0.8 }}>HAPPINESS DELIVERED</div>
+
+        <div style={{ padding:"24px 20px 8px" }}>
+          <h1 style={{ fontSize:22, fontWeight:700, color:"#1A1A1A", letterSpacing:"-0.3px" }}>Rider Demand Forecast Tool</h1>
+          <p style={{ fontSize:12, color:"#999", marginTop:4 }}>Powered by 889 days of ehatud operational data · Jan 2024 – Jun 2026</p>
+        </div>
+
+        {/* Controls */}
+        <div style={s.ctrlWrap}>
+          <div style={s.ctrlRow} className="control-row">
+            <div style={s.ctrlBox}>
+              <label style={s.ctrlLabel}>SELECT DATE</label>
+              <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={s.ctrlInput} />
+            </div>
+            <div style={s.ctrlBox}>
+              <label style={s.ctrlLabel}>BRANCH</label>
+              <select value={branch} onChange={e=>setBranch(e.target.value)} style={s.ctrlInput}>
+                <option>Hinunangan</option>
+                <option>Sogod</option>
+              </select>
+            </div>
           </div>
         </div>
-        <div style={{ fontSize:13, opacity:0.9, marginTop:8 }}>Rider Demand Forecast Tool</div>
-        <div style={{ fontSize:11, opacity:0.7, marginTop:2 }}>Powered by 889 days of ehatud operational data · Jan 2024 – Jun 2026</div>
-      </div>
 
-      {/* Controls */}
-      <div style={{ padding:"20px 24px 0" }}>
-        <div style={{ display:"flex", gap:12, flexWrap:"wrap" }}>
-          <div style={{ flex:1, minWidth:160 }}>
-            <label style={{ fontSize:11, fontWeight:600, color:"#666", letterSpacing:"0.5px", display:"block", marginBottom:6 }}>SELECT DATE</label>
-            <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
-              style={{ width:"100%", padding:"10px 12px", border:"1.5px solid #E02020", borderRadius:8, fontSize:14, fontFamily:"inherit", background:"#fff", color:"#1A1A1A", outline:"none" }} />
-          </div>
-          <div style={{ flex:1, minWidth:160 }}>
-            <label style={{ fontSize:11, fontWeight:600, color:"#666", letterSpacing:"0.5px", display:"block", marginBottom:6 }}>BRANCH</label>
-            <select value={branch} onChange={e => setBranch(e.target.value)}
-              style={{ width:"100%", padding:"10px 12px", border:"1.5px solid #E02020", borderRadius:8, fontSize:14, fontFamily:"inherit", background:"#fff", color:"#1A1A1A", outline:"none" }}>
-              <option>Hinunangan</option>
-              <option>Sogod</option>
-            </select>
-          </div>
-        </div>
-      </div>
+        {/* Main Card */}
+        <div style={s.cardWrap}>
+          <div style={{...s.card, border:`2px solid ${dem.border}`}}>
+            <div style={{...s.cardTop, background:dem.bg, borderBottom:`1px solid ${dem.color}20`}}>
+              <span style={{...s.badge, color:dem.color}}>{dem.label}</span>
+              <span style={s.dateStr}>{DOW_NAMES[dow]}, {d.toLocaleDateString("en-PH",{month:"long",day:"numeric",year:"numeric"})}</span>
+            </div>
 
-      {/* Main Card */}
-      <div style={{ padding:"16px 24px" }}>
-        <div style={{ background:"#fff", borderRadius:12, border:`2px solid ${demand.color}`, overflow:"hidden" }}>
-          <div style={{ background:demand.bg, borderBottom:`1px solid ${demand.color}20`, padding:"10px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-            <span style={{ fontSize:11, fontWeight:700, color:demand.color, letterSpacing:"1px" }}>{demand.label}</span>
-            <span style={{ fontSize:11, color:"#888" }}>{DOW_NAMES[dow]}, {date.toLocaleDateString("en-PH",{ month:"long", day:"numeric", year:"numeric" })}</span>
-          </div>
-
-          <div style={{ padding:"20px 16px" }}>
-            <div style={{ display:"flex", gap:0, marginBottom:16 }}>
-              <div style={{ flex:1, textAlign:"center", borderRight:"1px solid #F5F5F5", paddingRight:12 }}>
-                <div style={{ fontSize:48, fontWeight:700, color:"#E02020", lineHeight:1 }}>{predictedTx}</div>
-                <div style={{ fontSize:11, color:"#888", marginTop:4, letterSpacing:"0.5px" }}>ESTIMATED ORDERS</div>
+            {/* Big numbers */}
+            <div style={s.numRow}>
+              <div style={s.numBox}>
+                <div style={{...s.bigNum, color:"#E02020"}} className="big-number">{tx}</div>
+                <div style={s.numLbl}>ESTIMATED ORDERS</div>
               </div>
-              <div style={{ flex:1, textAlign:"center", paddingLeft:12 }}>
-                <div style={{ fontSize:48, fontWeight:700, color:"#1A1A1A", lineHeight:1 }}>{ridersNeeded}</div>
-                <div style={{ fontSize:11, color:"#888", marginTop:4, letterSpacing:"0.5px" }}>RIDERS RECOMMENDED</div>
+              <div style={s.numDivider} />
+              <div style={s.numBox}>
+                <div style={{...s.bigNum, color:"#1A1A1A"}} className="big-number">{rid}</div>
+                <div style={s.numLbl}>RIDERS RECOMMENDED</div>
               </div>
             </div>
 
-            {events.length > 0 && (
-              <div style={{ marginBottom:14 }}>
-                {events.map((ev,i) => (
-                  <div key={i} style={{ display:"inline-flex", alignItems:"center", gap:6, background:"#FFF0F0", border:"1px solid #E0202030", borderRadius:20, padding:"4px 10px", fontSize:12, color:"#E02020", fontWeight:600, marginRight:6, marginBottom:4 }}>
-                    <span>{ev.icon}</span><span>{ev.label}</span>
-                    <span style={{ opacity:0.7 }}>+{Math.round((ev.boost-1)*100)}% orders</span>
+            {/* Event tags */}
+            {evs.length > 0 && (
+              <div style={s.tagWrap}>
+                {evs.map((ev,i)=>(
+                  <div key={i} style={s.tag}>
+                    <span>{ev.icon}</span>
+                    <span>{ev.label}</span>
+                    <span style={{opacity:0.65, fontSize:12}}>+{Math.round((ev.boost-1)*100)}%</span>
                   </div>
                 ))}
               </div>
             )}
 
-            {isPostLaunch && (
-              <div style={{ background:"#E020200D", border:"1px solid #E0202030", borderRadius:8, padding:"8px 12px", fontSize:12, color:"#E02020", marginBottom:14 }}>
-                🚀 <strong>Post-app launch projection</strong> — includes +114% volume growth estimate from July 25, 2026 baseline
+            {/* Post-launch */}
+            {post && (
+              <div style={s.postLaunch}>
+                🚀 <strong>Post-app launch projection</strong> — includes +114% volume growth from July 25, 2026 baseline
               </div>
             )}
 
-            <button onClick={() => setShowDetails(!showDetails)}
-              style={{ background:"none", border:"1px solid #E5E5E5", borderRadius:6, padding:"6px 12px", fontSize:12, color:"#888", cursor:"pointer", fontFamily:"inherit" }}>
-              {showDetails ? "▲ Hide" : "▼ Show"} forecast breakdown
+            {/* Toggle breakdown */}
+            <button onClick={()=>setOpen(!open)} style={s.toggleBtn}>
+              {open ? "▲ Hide" : "▼ Show"} forecast breakdown
             </button>
 
-            {showDetails && (
-              <div style={{ marginTop:12, background:"#F5F5F5", borderRadius:8, padding:12 }}>
-                <div style={{ fontSize:11, fontWeight:700, color:"#666", marginBottom:8, letterSpacing:"0.5px" }}>HOW THIS WAS CALCULATED</div>
+            {open && (
+              <div style={s.detailBox}>
+                <div style={s.detailHdr}>HOW THIS WAS CALCULATED</div>
                 {[
-                  { label:"Base daily orders", val: String(cfg.baseDaily) },
-                  { label:`${DOW_NAMES[dow]} pattern`, val:`×${dowMult.toFixed(2)}` },
-                  { label:`${MONTH_NAMES[month]} seasonal factor`, val:`×${monthMult.toFixed(2)}` },
-                  ...(events.length>0 ? [{ label:events[0].label, val:`×${eventBoost.toFixed(2)}` }] : []),
-                  ...(isPostLaunch ? [{ label:"App launch growth", val:`×${growthMult.toFixed(2)}` }] : []),
-                ].map((row,i) => (
-                  <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:12, padding:"3px 0", borderBottom:"1px solid #E5E5E5" }}>
-                    <span style={{ color:"#555" }}>{row.label}</span>
-                    <span style={{ fontWeight:600 }}>{row.val}</span>
+                  { l:"Base daily orders",           v: String(cfg.baseDaily) },
+                  { l:`${DOW_NAMES[dow]} pattern`,   v:`×${dm.toFixed(2)}` },
+                  { l:`${MONTH_NAMES[mon]} seasonal factor`, v:`×${mm.toFixed(2)}` },
+                  ...(evs.length ? [{ l:evs[0].label, v:`×${eb.toFixed(2)}` }] : []),
+                  ...(post ? [{ l:"App launch growth", v:`×${gm.toFixed(2)}` }] : []),
+                ].map((row,i)=>(
+                  <div key={i} style={s.detailRow}>
+                    <span style={{color:"#555"}}>{row.l}</span>
+                    <span style={{fontWeight:700}}>{row.v}</span>
                   </div>
                 ))}
-                <div style={{ display:"flex", justifyContent:"space-between", fontSize:13, fontWeight:700, marginTop:6, color:"#E02020" }}>
-                  <span>Predicted orders</span><span>{predictedTx}</span>
+                <div style={s.detailTotal}>
+                  <span>Predicted orders</span><span>{tx}</span>
                 </div>
               </div>
             )}
           </div>
         </div>
-      </div>
 
-      {/* 7-Day Chart */}
-      <div style={{ padding:"0 24px 16px" }}>
-        <div style={{ background:"#fff", borderRadius:12, border:"1px solid #E5E5E5", padding:16 }}>
-          <div style={{ fontSize:12, fontWeight:700, color:"#E02020", letterSpacing:"0.5px", marginBottom:14 }}>
-            7-DAY OUTLOOK — {branch.toUpperCase()}
-          </div>
-          <div style={{ display:"flex", gap:6, alignItems:"flex-end", height:140 }}>
-            {nextDays.map((day, i) => {
-              const pct = day.tx / (maxTx * 1.1);
-              const isToday = i === 0;
-              const barColor = day.mult >= 1.25 ? "#E02020" : day.mult >= 1.1 ? "#C17000" : "#1A1A1A";
-              return (
-                <div key={i} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:3 }}>
-                  <div style={{ fontSize:10, height:16, display:"flex", alignItems:"center" }}>{day.events.length>0 ? day.events[0].icon : ""}</div>
-                  <div style={{ fontSize:10, fontWeight:700, color:barColor }}>{day.tx}</div>
-                  <div style={{ width:"100%", height:Math.max(4, Math.round(pct*80)), background:isToday?"#E02020":barColor+"60", borderRadius:"3px 3px 0 0", border:isToday?"none":`1px solid ${barColor}30` }} />
-                  <div style={{ fontSize:9, color:"#888", background:"#F5F5F5", borderRadius:4, padding:"1px 4px", fontWeight:600 }}>{day.riders}r</div>
-                  <div style={{ fontSize:9, color:isToday?"#E02020":"#999", fontWeight:isToday?700:400 }}>{DOW_NAMES[day.date.getDay()].slice(0,3).toUpperCase()}</div>
-                </div>
-              );
-            })}
-          </div>
-          <div style={{ fontSize:10, color:"#bbb", marginTop:8 }}>Bar height = estimated orders · Number below = recommended riders (r)</div>
-        </div>
-      </div>
-
-      {/* Seasonal Calendar */}
-      <div style={{ padding:"0 24px 16px" }}>
-        <div style={{ background:"#fff", borderRadius:12, border:"1px solid #E5E5E5", padding:16 }}>
-          <div style={{ fontSize:12, fontWeight:700, color:"#E02020", letterSpacing:"0.5px", marginBottom:12 }}>SEASONAL DEMAND CALENDAR</div>
-          <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-            {Object.entries(MONTH_MULTIPLIERS).map(([m, mult]) => {
-              const level = getDemandLevel(mult);
-              const isCurrentMonth = parseInt(m) === month;
-              return (
-                <div key={m} style={{ background:isCurrentMonth?"#E02020":level.bg, border:`1px solid ${isCurrentMonth?"#E02020":level.color+"30"}`, borderRadius:6, padding:"6px 8px", minWidth:48, textAlign:"center" }}>
-                  <div style={{ fontSize:11, fontWeight:700, color:isCurrentMonth?"#fff":level.color }}>{MONTH_NAMES[m]}</div>
-                  <div style={{ fontSize:9, color:isCurrentMonth?"#fff":"#888", marginTop:1 }}>×{mult.toFixed(2)}</div>
-                </div>
-              );
-            })}
+        {/* 7-Day Outlook */}
+        <div style={s.weekWrap}>
+          <div style={s.weekCard}>
+            <div style={s.weekHdr}>7-DAY OUTLOOK — {branch.toUpperCase()}</div>
+            <div style={s.weekBars}>
+              {week.map((w,i)=>{
+                const pct   = w.tx / (maxTx * 1.1);
+                const today = i===0;
+                const bc    = w.mult>=1.25?"#E02020":w.mult>=1.1?"#C17000":"#555";
+                return (
+                  <div key={i} style={s.weekBarCol}>
+                    <div style={s.weekIcon}>{w.ev.length?w.ev[0].icon:""}</div>
+                    <div style={{...s.weekTx, color:bc}}>{w.tx}</div>
+                    <div style={{
+                      width:"100%",
+                      height: Math.max(6, Math.round(pct*88)),
+                      background: today?"#E02020":bc+"55",
+                      borderRadius:"4px 4px 0 0",
+                      border: today?"none":`1px solid ${bc}30`,
+                    }}/>
+                    <div style={{...s.weekRider}}>{w.r}r</div>
+                    <div style={{...s.weekDay, color:today?"#E02020":"#999"}}>{DOW_SHORT[w.d.getDay()]}</div>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={s.weekNote}>Bar = estimated orders · r = riders recommended</div>
           </div>
         </div>
-      </div>
 
-      {/* Footer */}
-      <div style={{ textAlign:"center", padding:"12px 24px 24px", fontSize:10, color:"#bbb", letterSpacing:"1.5px" }}>
-        EHATUD · HAPPINESS DELIVERED<br/>
-        <span style={{ fontSize:9 }}>Model based on Hinunangan + Sogod daily data · Not a substitute for dispatcher judgment</span>
+        {/* Seasonal Calendar */}
+        <div style={s.seasonWrap}>
+          <div style={s.seasonCard}>
+            <div style={s.seasonHdr}>SEASONAL DEMAND CALENDAR</div>
+            <div style={{...s.monthGrid}} className="month-grid">
+              {Object.entries(MONTH_MULTIPLIERS).map(([m, mult])=>{
+                const lv  = getDemand(mult);
+                const cur = parseInt(m)===mon;
+                return (
+                  <div key={m} style={{
+                    ...s.monthCell,
+                    background: cur?"#E02020":lv.bg,
+                    border:`1px solid ${cur?"#E02020":lv.color+"30"}`,
+                  }} className="month-cell">
+                    <div style={{...s.monthName, color:cur?"#fff":lv.color}}>{MONTH_NAMES[m]}</div>
+                    <div style={{...s.monthMult, color:cur?"rgba(255,255,255,0.8)":"#999"}}>×{mult.toFixed(2)}</div>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={s.legendRow}>
+              {legends.map(l=>(
+                <div key={l.label} style={{display:"flex",alignItems:"center",gap:5}}>
+                  <div style={{...s.legendDot, background:l.bg, border:`1px solid ${l.color}40`}}/>
+                  <span style={s.legendTxt}>{l.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={s.footer}>
+
+          <span style={{fontSize:10, letterSpacing:"0.5px"}}>
+            Model based on Hinunangan + Sogod daily data · Not a substitute for dispatcher judgment
+          </span>
+        </div>
+
       </div>
     </div>
   );
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App />);
-  </script>
+</script>
 </body>
 </html>
